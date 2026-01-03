@@ -1,0 +1,32 @@
+---
+title: "Time series analysis, 7.5 hp "
+subtitle: "Inlämningsuppgift 2, 2.5 hp"
+author: 
+- Sverker Berggren
+- Love Alfredsson
+- Emil Möller
+date: last-modified
+format: 
+  html:
+    self-contained: true
+  #pdf: default
+language: 
+  title-block-author-single: " "
+crossref-fig-title: "Figur"
+title-block-banner-color: Primary
+title-block-published: "Publicerad"
+author-title: "Gruppmedlemmar"
+title-block-banner: true
+editor: source
+---
+
+```{r}
+#| output: false
+#| echo: false
+library(dplyr)
+library(ggplot2)
+```
+
+# Uppgift 1
+
+
