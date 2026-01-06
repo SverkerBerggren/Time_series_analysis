@@ -92,7 +92,7 @@ dow_price = dow_price %>% arrange(date) %>% fill(close_gas, .direction = "down")
 
 Here we can visualize the data. We do not assume that the time series have any particular peridiocity, the only thing we could speculate should exist is a positive trend where inflation and an tendency for the economy to grow should increase the prices. On the other hand all of these instruments are susceptible to a lot of variance stemming from global political shocks. Trumps tariffs, the war in Ukraine, OPECS price setting are all phenomenon that have a huge impact on the price that do not follow a particular pattern. 
 
-Looking at the normalized graph we can see promising results. There seems to be a strong correlation between DOW and oil prices, and when the gas price flucuate so does it seem to affect the DOW price also.
+Looking at the normalized graph we can see promising results. There seems to be a strong correlation between DOW and oil prices, and when the gas price flucuate so does it seem to affect the DOW price also. Interestingly the correlation seems to break later in the time series. This could be a consequence of a company specific incident that causes the stock to lose value.
 ```{r}
 ggplot(dow_price, aes(date)) + ggtitle("DOW stock price")+
    geom_line(aes(y = close)) 
