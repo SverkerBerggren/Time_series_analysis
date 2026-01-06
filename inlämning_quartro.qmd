@@ -28,24 +28,31 @@ library(ggplot2)
 library(tidyverse)
 library(jsonlite)
 library(lubridate)
-
 ```
+# Abstract
+In this report will we investigate the relationship between commodity future prices and the price of Dow Inc, on of the larger plastic producers. The question we have if there is any material connection, and if so is it strong enough to incorporate into a potential trading strategy that could generate a meaningful alpha?
 
-# Uppgift 1
+# Introduction
+The choice of company is Dow Chemical Company, or its stock designation DOW, is based on this article from Plastics Technology https://www.plastics-technology.com/articles/top-largest-plastic-producing-companies. Here DOW is said to be the biggest plastic producing company, and as such we assume that it is proportionally more resilient to individual company management and is more representative of the plastic industry as a whole. Looking at their Q3 report for 2025 we can see that Packaging & Specialty Plastics account for a bit over half of the companys overall revenue. https://investors.dow.com/en/news/news-details/2025/Dow-reports-third-quarter-2025-results/default.aspx. A change in the margins of the plastic production therefore should have a big impact on the price evaluation of the company.
+
+We then choose which commodities to take into account. There is no concrete explanation from DOW regarding what commodities they source for their plastic production so we used the article from U.S Energy Information Administration to try to find which commodities are the most relevant for plastic production. https://www.eia.gov/tools/faqs/faq.php?id=34&t=6. Here we found that materials refined from crude oil are the most used feedstocks and that byproducts from natural gas production are also important. The article stresses that there are no hard numbers to give regarding the exact feedstocks used so it is a bit speculative regarding how it actually looks like in practice. With this information in mind we choose Crude Oil futures and american natural gas futures as our commodities of interest. 
+
+# Description of data
+
+The stock data is sourced from Alpaca markets api and the future data is sourced from Databento's service. The futures we have queryed are CL, Crude Oil futures and NG, Henry Hub Natural Gas Futures. DOW started trading in its current incarnation 2019 April 2 so our timeframe is between 2019 April 2 - 2026 Janury 4. We choose to analyze full day aggregations of the financial instruments.        
 
 ```{r}
-json <- fromJSON("data/dow_stock_price.json")
+stock_data <- fromJSON("data/dow_stock_price.json")
 
-dow_tibble <- json$DOW  %>%   as_tibble()
+dow_price <- stock_data$DOW  %>%   as_tibble()
 
-dow_tibble = dow_tibble %>% rename(high = h, open = o, close = c,low = l,date = t,volume = v, number_of_trades = n,volume_weighted_average_price = vw)
-dow_tibble = dow_tibble %>% mutate(date = as.Date(date))
-futures_tibble <- stream_in(file("data/glbx-mdp3-20190402-20260103.ohlcv-1d.json"),verbose = FALSE)%>% unnest_wider(hd) %>% as_tibble()
-
+dow_price = dow_price %>% rename(high = h, open = o, close = c,low = l,date = t,volume = v, number_of_trades = n,volume_weighted_average_price = vw)
+dow_price = dow_price %>% mutate(date = as.Date(date))
+futures_price <- stream_in(file("data/glbx-mdp3-20190402-20260103.ohlcv-1d.json"),verbose = FALSE)%>% unnest_wider(hd) %>% as_tibble()
 ```
 
 ```{r}
-futures_tibble = futures_tibble %>%
+futures_price = futures_price %>%
   mutate(
     ts_event = as.Date(ts_event),
     open   = as.numeric(open),
@@ -56,28 +63,51 @@ futures_tibble = futures_tibble %>%
   )
 ```
 
+Firstly we can explain the terminology regarding market bars. High means the highest price the instrument traded for during the specified timeframe. Low is conversly the lowest price traded for. Close is what the price was when the time frame ended. Volume is the number of financial instruments traded while the number of trades is the number of transactions. A transaction can buy or sell a variable amount of the actual instrument. Volume weighted average price is the volume traded multiplied by the price divided by the total volume.
+
+As we can see here the price of an instrument can have multiple definitions depending on perspective. What we have chosen as our definition for the price of the stock and the future is the closing price. This is the most common definition when used for news reporting and in common discourse.
+
+Defining the price of a commodity is a bit more of a nuanced topic. The price of a commodity is usually determined through futures contract. A definition of a futures contract can be given from Wikipedia "In finance, a futures contract (sometimes called futures) is a standardized legal contract to buy or sell something at a predetermined price for delivery at a specified time in the future, between parties not yet known to each other". With this in mind there is no "canonical" price of oil, but rather speculation on oil deliveries on different time frames. The definition we use for the price of oil on a given day is the close price of the oil future instrument with the most volume for a given day. This is usually the front month contract, which is the contract with the nearest expiration date. 
+
 ```{r}
-oil_tibble = futures_tibble %>%  filter(grepl("^CL[A-Z][0-9]$", symbol))
-oil_daily = oil_tibble %>%  group_by(ts_event) %>% slice_max(volume,n=1,with_ties = FALSE) %>% ungroup() 
+# The data contains multiple different kind of futures contract, such as derivatives and butterfly spreads. This grep regex only takes out the regular future contract.
+oil_daily = futures_price %>%  filter(grepl("^CL[A-Z][0-9]$", symbol))
+oil_daily = oil_daily %>%  group_by(ts_event) %>% slice_max(volume,n=1,with_ties = FALSE) %>% ungroup() 
 oil_daily = oil_daily %>% rename(date = ts_event,close_oil = close)
 
-natural_gas_tibble = futures_tibble %>%  filter(grepl("^NG[A-Z][0-9]$", symbol))
-natural_gas_tibble = natural_gas_tibble %>%  group_by(ts_event) %>% slice_max(volume,n=1,with_ties = FALSE) %>% ungroup() 
-natural_gas_tibble = natural_gas_tibble %>% rename(date = ts_event,close_gas = close)
-
-
-dow_tibble = dow_tibble %>% left_join(select(oil_daily,date,close_oil),by = "date",)
-dow_tibble = dow_tibble %>% left_join(select(natural_gas_tibble,date,close_gas),by = "date",)
-
-ggplot(dow_tibble, aes(date)) +
-   geom_line(aes(y = close, colour = "stock close")) + geom_line(aes(y = close_oil, colour = "oil close")) + geom_line(aes(y = close_gas, colour = "gas close")) +
-   labs(title = "Daily Front-Month Crude Oil Price")
+natural_gas_daily = futures_price %>%  filter(grepl("^NG[A-Z][0-9]$", symbol))
+natural_gas_daily = natural_gas_daily %>%  group_by(ts_event) %>% slice_max(volume,n=1,with_ties = FALSE) %>% ungroup() 
+natural_gas_daily = natural_gas_daily %>% rename(date = ts_event,close_gas = close)
 
 
 ```
 
+Another important thing to note is that futures trading and stock trading are not traded at the same exchange and as such have different trading days. DOW is traded on NASDAQ and futures are traded on the CME/NYMEX calender. As a consequence there are more days were futures are traded in comparison to American stocks. We have not transformed the data in any way, we choose to instead only keep the futures observations that also occur on a trading day on NASDAQ This should be sufficient in the sense that the stock price can only affected when the trading of the stock is allowed to occur. A problem that occurs is that sometimes there are trading day for stocks when there is no trading for futures. To remedy this we replace the future price with the latest trading future price, which should be a sufficient remedy.
+```{r}
+dow_price = dow_price %>% left_join(select(oil_daily,date,close_oil),by = "date")
+dow_price = dow_price %>% left_join(select(natural_gas_daily,date,close_gas),by = "date")
+dow_price = dow_price %>% arrange(dow_price$date) %>% fill(close_oil, .direction = "down")
+dow_price = dow_price %>% arrange(date) %>% fill(close_gas, .direction = "down")
+```
 
-https://blog.bizvibe.com/blog/plastic-manufacturing-companies
+Here we can visualize the data. We do not assume that the time series have any particular peridiocity, the only thing we could speculate should exist is a positive trend where inflation and an tendency for the economy to grow should increase the prices. On the other hand all of these instruments are susceptible to a lot of variance stemming from global political shocks. Trumps tariffs, the war in Ukraine, OPECS price setting are all phenomenon that have a huge impact on the price that do not follow a particular pattern. 
+
+Looking at the normalized graph we can see promising results. There seems to be a strong correlation between DOW and oil prices, and when the gas price flucuate so does it seem to affect the DOW price also.
+```{r}
+ggplot(dow_price, aes(date)) + ggtitle("DOW stock price")+
+   geom_line(aes(y = close)) 
+ggplot(dow_price, aes(date)) + ggtitle("Oil price")+
+   geom_line(aes(y = close_oil))
+ggplot(dow_price, aes(date)) + ggtitle("Gas price")+
+   geom_line(aes(y = close_gas))
+
+normalize <- function(x){ res <- x/max(x); res - res[[1]]} 
+ggplot(dow_price, aes(date)) + ggtitle("Compared prices")+
+    geom_line(aes(y = normalize( close_gas),colour ="Gas")) + geom_line(aes(y = normalize(close_oil),colour ="Oil")) +  geom_line(aes(y =  normalize(close),colour ="DOW"))
+```
+
+
+https://blog.bizvibe.com/blog/plastic2-manufacturing-companies
 https://investors.dow.com/en/news/news-details/2025/Dow-reports-third-quarter-2025-results/default.aspx
 https://www.eia.gov/tools/faqs/faq.php?id=34&t=6
 
