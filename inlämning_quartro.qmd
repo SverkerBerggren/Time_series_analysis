@@ -337,3 +337,142 @@ acf(dow_ts_stationarity,
 ```
 
 In plot 9 we see that the transformed DOW index is stationary. After applying the first order differencing the unit root that was present during the first ADF test on the non-stationary time series have now been removed. Looking att the auto correlation function we see that by using a first order differencing the residual are now independently and identically distributed(IID), a crucial requirment for the continued analysis.
+
+#UPPGIFT 4
+
+#A
+```{r}
+#Training data
+n <- length(dow_ts)
+
+train_data <- window(dow_ts,end = time(dow_ts)[n_total - 30])
+```
+
+```{r}
+#Make it stationary
+
+data_difference <- diff(train_data)
+```
+
+
+```{r}
+#Fit the ARMA model
+arma_model <- arima(data_difference,order = c(1, 0, 1))
+
+arma_model
+
+```
+
+```{r}
+#fitted value
+fit_value_difference <- data_difference - residuals(arma_model)
+
+fitted_value <- train_data[-1] + fit_value_difference
+```
+
+```{r}
+#Plot the data toghter with fitted values
+plot(train_data,main = "Obs vs Fitted",ylab = "Closing Price",xlab = "")
+
+lines(ts(fitted_value,start = time(train_data)[2],frequency = frequency(train_data)),col = "green",lwd = 2)
+
+legend("topleft",legend = c("Observed", "Fitted"),col = c("black", "green"),lty = 1,cex = 1)
+```
+```{r}
+#B
+#residuals
+residuals <- residuals(arma_model)
+
+acf(residuals,main = "ACF TEST")
+
+jarque.bera.test(residuals)
+```
+
+```{r}
+#C
+#legnth and horizon
+test <- 30
+h1 <- 1
+h4 <- 4
+```
+
+```{r}
+#Rolling forecast
+rolling_forecast <- function(data,horizon,test){
+n <- length(data); f <- numeric(test)
+for(i in 1:test){
+ti <- window(data,end=time(data)[n-test+i-1])
+d <- diff(ti)
+a <- arima(d,order=c(1,0,1))
+f[i] <- ti[length(ti)] + predict(a,n.ahead=horizon)$pred[horizon]}
+  f
+}
+```
+
+```{r}
+#forecast
+forecast_h1 <- rolling_forecast(dow_ts, h1, test)
+forecast_h4 <- rolling_forecast(dow_ts, h4, test)
+```
+
+
+```{r}
+
+#Observed values
+observed <- tail(dow_ts, test)
+
+#RMSE and MAD
+rmse_h1 <- sqrt(mean((observed - forecast_h1)^2))
+mad_h1  <- mean(abs(observed - forecast_h1))
+rmse_h4 <- sqrt(mean((observed - forecast_h4)^2))
+mad_h4  <- mean(abs(observed - forecast_h4))
+
+#D
+#alpha and sigma
+alpha <- 0.05
+sigma <- sd(residuals(arma_model))
+
+#plot for h1
+upper_h1 <- forecast_h1 + qnorm(1 - alpha/2) * sigma
+lower_h1 <- forecast_h1 - qnorm(1 - alpha/2) * sigma
+plot(observed, type = "l", col = "black",main = "plot forecast h1",ylab = "Price", xlab = "")
+lines(forecast_h1, col = "steelblue")
+lines(upper_h1, col = "red", lty = 2)
+lines(lower_h1, col = "red", lty = 2)
+
+#plot for h4
+upper_h4 <- forecast_h4 + qnorm(1 - alpha/2) * sigma
+lower_h4 <- forecast_h4 - qnorm(1 - alpha/2) * sigma
+plot(observed, type = "l", col = "black",main = "plot forecast h4",ylab = "Price", xlab = "")
+lines(forecast_h4, col = "steelblue", lwd = 2)
+lines(upper_h4, col = "red", lty = 2)
+lines(lower_h4, col = "red", lty = 2)
+```
+
+
+```{r}
+#E
+test <- 30
+observed <- tail(dow_ts, test)
+
+#forecast randomwalk (RW)
+forecast_rw_h1 <- dow_ts[(length(dow_ts) - test):(length(dow_ts) - 1)]
+forecast_rw_h4 <- dow_ts[(length(dow_ts) - test - 3):(length(dow_ts) - 4)]
+
+#RMSE for ARMA and RW
+rmse_arma_h1 <- sqrt(mean((observed - forecast_h1)^2))
+rmse_rw_h1 <- sqrt(mean((observed - forecast_rw_h1)^2))
+rmse_arma_h4 <- sqrt(mean((observed - forecast_h4)^2))
+rmse_rw_h4 <- sqrt(mean((observed - forecast_rw_h4)^2))
+
+#table for RMSE
+rmse_table <- matrix(c(rmse_arma_h1, rmse_rw_h1,rmse_arma_h4, rmse_rw_h4),nrow = 2, byrow = TRUE)
+colnames(rmse_table) <- c("RMSE ARMA", "RMSE RW")
+rownames(rmse_table) <- c("h = 1", "h = 4")
+rmse_table-
+```
+
+
+
+#F
+#The RMSE table in task e, shows that RMSE for ARMA and RW is nearly the same for h1. But for h4, ARMA is clearly much better. This suggests that the ARMA model is more useful for longer forecast horizons.
