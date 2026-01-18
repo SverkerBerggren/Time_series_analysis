@@ -99,13 +99,6 @@ Here we can visualize the data. We do not assume that the time series have any p
 
 Looking at the normalized graph we can see promising results. There seems to be a strong correlation between DOW and oil prices, and when the gas price flucuate so does it seem to affect the DOW price also. Interestingly the correlation seems to break later in the time series. This could be a consequence of a company specific incident that causes the stock to lose value.
 ```{r}
-ggplot(dow_price, aes(date)) + ggtitle("DOW stock price")+
-   geom_line(aes(y = close)) 
-ggplot(dow_price, aes(date)) + ggtitle("Oil price")+
-   geom_line(aes(y = close_oil))
-ggplot(dow_price, aes(date)) + ggtitle("Gas price")+
-   geom_line(aes(y = close_gas))
-
 normalize <- function(x){ res <- x/max(x); res - res[[1]]} 
 ggplot(dow_price, aes(date)) + ggtitle("Compared prices")+
     geom_line(aes(y = normalize( close_gas),colour ="Gas")) + geom_line(aes(y = normalize(close_oil),colour ="Oil")) +  geom_line(aes(y =  normalize(close),colour ="DOW"))
@@ -169,7 +162,7 @@ dow_rolling_forecasts <- function(data, n_test, horizon) {
 
 Now that the function is defined we can make the rolling forecasts for the horizons h=1 and h=4 since our time series does not have any seasonality.
 
-```{r}
+```{r warning=FALSE}
 rf_dow_h1 <- dow_rolling_forecasts(dow_ts, n_test = 30, horizon = 1)
 rf_dow_h4 <- dow_rolling_forecasts(dow_ts, n_test = 30, horizon = 4)
 ```
@@ -317,7 +310,7 @@ adf.test(dow_ts)
 
 The null hypothesis is that the series is non-stationary and the alternative hypothesis is that the time series is stationary. The p-value of the ADF test was 0.7273 which means we can not reject the null hypothesis since 0.7273\>0.05. This means that there is no statistical evidence that our time series is stationary and it requires transfromation in order to achive stationarity.
 
-```{r}
+```{r warning=FALSE}
 # First order differencing
 dow_ts_stationarity <- diff(dow_ts)
 
@@ -336,14 +329,14 @@ plot(dow_ts_stationarity,
 
 # The correlogram
 acf(dow_ts_stationarity,
-    main = "Plot 9: Correlogram of The Stationary DOW Index")
+    main = "Plot 10: Correlogram of The Stationary DOW Index")
 ```
 
-In plot 9 we see that the transformed DOW index is stationary. After applying the first order differencing the unit root that was present during the first ADF test on the non-stationary time series have now been removed. Looking att the auto correlation function we see that by using a first order differencing the residual are now independently and identically distributed(IID), a crucial requirment for the continued analysis.
+In plot 10 we see that the transformed DOW index is stationary. After applying the first order differencing the unit root that was present during the first ADF test on the non-stationary time series have now been removed. Looking att the auto correlation function we see that by using a first order differencing the residual are now independently and identically distributed(IID), a crucial requirment for the continued analysis.
 
-#UPPGIFT 4
+# ARMA model
 
-#A
+
 ```{r}
 #Training data
 n <- length(dow_ts)
@@ -358,7 +351,8 @@ data_difference <- diff(train_data)
 ```
 
 
-```{r}
+```{r warning = FALSE }
+
 #Fit the ARMA model
 arma_model <- arima(data_difference,order = c(1, 0, 1))
 
@@ -382,17 +376,14 @@ lines(ts(fitted_value,start = time(train_data)[2],frequency = frequency(train_da
 legend("topleft",legend = c("Observed", "Fitted"),col = c("black", "green"),lty = 1,cex = 1)
 ```
 ```{r}
-#B
-#residuals
 residuals <- residuals(arma_model)
 
 acf(residuals,main = "ACF TEST")
 
 jarque.bera.test(residuals)
 ```
-
+We see here that the reisduals does not seem to be autocorrelated, but they residuals are not normally distributed which affects our inference of the parameter estimates.
 ```{r}
-#C
 #legnth and horizon
 test <- 30
 h1 <- 1
@@ -412,7 +403,7 @@ f[i] <- ti[length(ti)] + predict(a,n.ahead=horizon)$pred[horizon]}
 }
 ```
 
-```{r}
+```{r warning = FALSE}
 #forecast
 forecast_h1 <- rolling_forecast(dow_ts, h1, test)
 forecast_h4 <- rolling_forecast(dow_ts, h4, test)
@@ -454,7 +445,6 @@ lines(lower_h4, col = "red", lty = 2)
 
 
 ```{r}
-#E
 test <- 30
 observed <- tail(dow_ts, test)
 
@@ -474,16 +464,11 @@ colnames(rmse_table) <- c("RMSE ARMA", "RMSE RW")
 rownames(rmse_table) <- c("h = 1", "h = 4")
 rmse_table
 ```
-
-#F
 The RMSE table in task e, shows that RMSE for ARMA and RW is nearly the same for h1. But for h4, ARMA is clearly much better. This suggests that the ARMA model is more useful for longer forecast horizons.
 
-#Var model
+# Var model
 
-#Fitting the model
-
-```{r}
-
+```{r warning = FALSE}
 # Var models require stationary data so we first make the data stationary and verify it with a adf test. 
 oil_ts_stationary = diff(ts(dow_price$close_oil,start = 2019, frequency = 252))
 gas_ts_stationary = diff(ts(dow_price$close_gas,start = 2019, frequency = 252))
@@ -491,21 +476,9 @@ gas_ts_stationary = diff(ts(dow_price$close_gas,start = 2019, frequency = 252))
 adf.test(oil_ts_stationary)
 adf.test(gas_ts_stationary)
 
-#The first results shows that oil and gas seems to have auto correlated residuals, we change the model by increasing the amount of lags to see if that solves it
-DOW_var_model <- VAR(cbind(oil_price=oil_ts_stationary,gas_price = gas_ts_stationary,dow_price = dow_ts_stationarity))
-acf(DOW_var_model$varresult$dow_price$residuals)
-acf(DOW_var_model$varresult$oil_price$residuals)
-acf(DOW_var_model$varresult$gas_price$residuals)
-
-portest(
-cbind(DOW_var_model$varresult$oil_price$residuals, DOW_var_model$varresult$gas_price$residuals,DOW_var_model$varresult$dow_price$residuals),
-test = "LjungBox"
-)
-
-
 DOW_var_model <- VAR(cbind(oil_price=oil_ts_stationary,gas_price = gas_ts_stationary,dow_price = dow_ts_stationarity), lag.max =20,ic="AIC",type = "const")
 
-# The residuals should now not be assumed to be correlated
+# We test for autocorrelation
 portest(
 cbind(DOW_var_model$varresult$oil_price$residuals, DOW_var_model$varresult$gas_price$residuals,DOW_var_model$varresult$dow_price$residuals),
 test = "LjungBox"
@@ -516,7 +489,6 @@ jarque.bera.test((DOW_var_model$varresult$oil_price$residuals))
 jarque.bera.test((DOW_var_model$varresult$gas_price$residuals))
 jarque.bera.test((DOW_var_model$varresult$dow_price$residuals))
 
-plot(x = 1:length(DOW_var_model$varresult$oil_price$residuals),y=DOW_var_model$varresult$oil_price$residuals)
 ```
 The residuals does not seem to be normally distributed. Our estimators should still be unbiased, but this will affect the confidence interval for our impulse reponse 
 
@@ -589,10 +561,11 @@ print(paste("MAD",result_2$MAD))
 ggplot(result_1$prediction_intervalls, aes(x = time_stamp)) +
   geom_line(aes(y = actual, color = "Actual"), linewidth = 1) +
   geom_line(aes(y = forecast, color = "Forecast"), linewidth = 1) +
+  geom_line(aes(y = forecast, color = "Forecast"), linewidth = 1) +
   geom_ribbon(aes(ymin = lower, ymax = upper, fill = "Prediction Interval"), alpha = 0.2) +
   scale_color_manual(name = "Series", values = c("Actual" = "black", "Forecast" = "blue")) +
   scale_fill_manual(name = "", values = c("Prediction Interval" = "red")) +
-  ggtitle("Rolling Forecast h=1") +
+  ggtitle("Rolling Forecasts") +
   theme_minimal()
 
 
