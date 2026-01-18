@@ -30,6 +30,8 @@ library(jsonlite)
 library(lubridate)
 library(stats)
 library(tseries)
+library(vars)
+library(portes)
 ```
 # Abstract
 In this report will we investigate the relationship between commodity future prices and the price of Dow Inc, on of the larger plastic producers. The question we have if there is any material connection, and if so is it strong enough to incorporate into a potential trading strategy that could generate a meaningful alpha?
@@ -86,9 +88,10 @@ natural_gas_daily = natural_gas_daily %>% rename(date = ts_event,close_gas = clo
 
 Another important thing to note is that futures trading and stock trading are not traded at the same exchange and as such have different trading days. DOW is traded on NASDAQ and futures are traded on the CME/NYMEX calender. As a consequence there are more days were futures are traded in comparison to American stocks. We have not transformed the data in any way, we choose to instead only keep the futures observations that also occur on a trading day on NASDAQ This should be sufficient in the sense that the stock price can only affected when the trading of the stock is allowed to occur. A problem that occurs is that sometimes there are trading day for stocks when there is no trading for futures. To remedy this we replace the future price with the latest trading future price, which should be a sufficient remedy.
 ```{r}
-dow_price = dow_price %>% left_join(select(oil_daily,date,close_oil),by = "date")
-dow_price = dow_price %>% left_join(select(natural_gas_daily,date,close_gas),by = "date")
-dow_price = dow_price %>% arrange(dow_price$date) %>% fill(close_oil, .direction = "down")
+
+dow_price = dow_price %>% left_join(dplyr::select(oil_daily,date,close_oil),by = "date")
+dow_price = dow_price %>% left_join(dplyr::select(natural_gas_daily,date,close_gas),by = "date")
+dow_price = dow_price %>% arrange(date) %>% fill(close_oil, .direction = "down")
 dow_price = dow_price %>% arrange(date) %>% fill(close_gas, .direction = "down")
 ```
 
@@ -469,10 +472,150 @@ rmse_rw_h4 <- sqrt(mean((observed - forecast_rw_h4)^2))
 rmse_table <- matrix(c(rmse_arma_h1, rmse_rw_h1,rmse_arma_h4, rmse_rw_h4),nrow = 2, byrow = TRUE)
 colnames(rmse_table) <- c("RMSE ARMA", "RMSE RW")
 rownames(rmse_table) <- c("h = 1", "h = 4")
-rmse_table-
+rmse_table
 ```
 
-
-
 #F
-#The RMSE table in task e, shows that RMSE for ARMA and RW is nearly the same for h1. But for h4, ARMA is clearly much better. This suggests that the ARMA model is more useful for longer forecast horizons.
+The RMSE table in task e, shows that RMSE for ARMA and RW is nearly the same for h1. But for h4, ARMA is clearly much better. This suggests that the ARMA model is more useful for longer forecast horizons.
+
+#Var model
+
+#Fitting the model
+
+```{r}
+
+# Var models require stationary data so we first make the data stationary and verify it with a adf test. 
+oil_ts_stationary = diff(ts(dow_price$close_oil,start = 2019, frequency = 252))
+gas_ts_stationary = diff(ts(dow_price$close_gas,start = 2019, frequency = 252))
+
+adf.test(oil_ts_stationary)
+adf.test(gas_ts_stationary)
+
+#The first results shows that oil and gas seems to have auto correlated residuals, we change the model by increasing the amount of lags to see if that solves it
+DOW_var_model <- VAR(cbind(oil_price=oil_ts_stationary,gas_price = gas_ts_stationary,dow_price = dow_ts_stationarity))
+acf(DOW_var_model$varresult$dow_price$residuals)
+acf(DOW_var_model$varresult$oil_price$residuals)
+acf(DOW_var_model$varresult$gas_price$residuals)
+
+portest(
+cbind(DOW_var_model$varresult$oil_price$residuals, DOW_var_model$varresult$gas_price$residuals,DOW_var_model$varresult$dow_price$residuals),
+test = "LjungBox"
+)
+
+
+DOW_var_model <- VAR(cbind(oil_price=oil_ts_stationary,gas_price = gas_ts_stationary,dow_price = dow_ts_stationarity), lag.max =20,ic="AIC",type = "const")
+
+# The residuals should now not be assumed to be correlated
+portest(
+cbind(DOW_var_model$varresult$oil_price$residuals, DOW_var_model$varresult$gas_price$residuals,DOW_var_model$varresult$dow_price$residuals),
+test = "LjungBox"
+)
+
+#We test for normality here
+jarque.bera.test((DOW_var_model$varresult$oil_price$residuals))
+jarque.bera.test((DOW_var_model$varresult$gas_price$residuals))
+jarque.bera.test((DOW_var_model$varresult$dow_price$residuals))
+
+plot(x = 1:length(DOW_var_model$varresult$oil_price$residuals),y=DOW_var_model$varresult$oil_price$residuals)
+```
+The residuals does not seem to be normally distributed. Our estimators should still be unbiased, but this will affect the confidence interval for our impulse reponse 
+
+```{r}
+imp_response <- irf(DOW_var_model, n.ahead = 20)
+plot(imp_response)
+```
+Interestingly it seems that oil price does not seem to affect the price of the stock price in a significant manner, where a increase in oil prices seems to as a first consequence increase the price of the stock. We had predicted that the increase in oil prices should affect the margins of the buisness and therefore decrease the price. It could otherwise be speculated that a increase in oil is associated with an overall increase in economic activity or a higher demand for oil derived products such as plastic. 
+
+Gas on the other hand seems to affect the DOW price to a higher degree where the price increases and then seems to decrease for a while. It is also interesting to see how much the predicted fluctuations of the oil price seems to come from a change in gas prices.
+
+Here we evaluate the RMSE and MAD using a rolling forecast
+```{r}
+rolling_var_forecast <- function(
+  all_data,
+  test_size,
+  horizon,
+  forecast_variable_name,
+  time_stamps
+) {
+  n_total <- nrow(all_data)
+  max_index = test_size - horizon + 1
+  actual_values = numeric(max_index)
+  predictions <- numeric(max_index)
+  
+  prediction_intervalls = data.frame(
+    time_stamp = numeric(max_index),
+    forecast = numeric(max_index),
+    lower = numeric(max_index),
+    upper = numeric(max_index),
+    actual = numeric(max_index)
+  )
+  
+  
+  for( i in 1:max_index)
+  {
+    train_end <- n_total - test_size + i - 1
+    DOW_var_model <- VAR(all_data[1:train_end, ], lag.max =20,ic="AIC",type = "const")
+    predict_return = predict(DOW_var_model, n.ahead = horizon,ci=0.95)$fcst[[forecast_variable_name]][horizon,c("fcst","lower","upper")]
+    
+    predictions[i] <- predict_return["fcst"]
+    actual_values[i] <- all_data[train_end + horizon, forecast_variable_name]
+    
+    prediction_intervalls$time_stamp[i] = time_stamps[train_end + horizon]
+    prediction_intervalls$forecast[i] = predict_return["fcst"]
+    prediction_intervalls$lower[i] = predict_return["lower"]
+    prediction_intervalls$upper[i] = predict_return["upper"]
+    prediction_intervalls$actual[i] = all_data[train_end + horizon, forecast_variable_name]
+  }
+
+  errors <- actual_values - predictions
+
+  list(
+    RMSE = sqrt(mean(errors^2, na.rm = TRUE)),
+    MAD  = mean(abs(errors), na.rm = TRUE),
+    prediction_intervalls = prediction_intervalls
+  )
+}
+
+data_test = cbind(oil_price=oil_ts_stationary,gas_price = gas_ts_stationary,dow_price = dow_ts_stationarity)
+
+result_1 = rolling_var_forecast(data_test, 30,1,forecast_variable_name="dow_price",time(dow_ts_stationarity))
+print(paste("RMSE",result_1$RMSE))
+print(paste("MAD",result_1$MAD))
+result_2 = rolling_var_forecast(data_test, 33,4,forecast_variable_name="dow_price",time(dow_ts_stationarity))
+print(paste("RMSE",result_2$RMSE))
+print(paste("MAD",result_2$MAD))
+
+
+ggplot(result_1$prediction_intervalls, aes(x = time_stamp)) +
+  geom_line(aes(y = actual, color = "Actual"), linewidth = 1) +
+  geom_line(aes(y = forecast, color = "Forecast"), linewidth = 1) +
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = "Prediction Interval"), alpha = 0.2) +
+  scale_color_manual(name = "Series", values = c("Actual" = "black", "Forecast" = "blue")) +
+  scale_fill_manual(name = "", values = c("Prediction Interval" = "red")) +
+  ggtitle("Rolling Forecast h=1") +
+  theme_minimal()
+
+
+ggplot(result_2$prediction_intervalls, aes(x = time_stamp)) +
+  geom_line(aes(y = actual, color = "Actual"), linewidth = 1) +
+  geom_line(aes(y = forecast, color = "Forecast"), linewidth = 1) +
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = "Prediction Interval"), alpha = 0.2) +
+  scale_color_manual(name = "Series", values = c("Actual" = "black", "Forecast" = "blue")) +
+  scale_fill_manual(name = "", values = c("Prediction Interval" = "red")) +
+  ggtitle("Rolling Forecast h=4") +
+  theme_minimal()
+
+```
+
+This is then compared to a random walk. Here we can see that the var model outperforms the random walk, if only marginally, during a time horizon of 1, while being substantially better at a horizon of 4.  
+```{r}
+# Table to compare the results
+RMSE_matrix <- matrix(c(result_1$RMSE, rw_rmse_h1,
+                        result_2$RMSE, rw_rmse_h4),
+                        nrow = 2, byrow = TRUE)
+colnames(RMSE_matrix) <- c("VAR RMSE", "RW RMSE")
+rownames(RMSE_matrix) <- c("VAR and RW h=1", "VAR and RW h=4")
+RMSE_table <- as.table(RMSE_matrix)
+RMSE_table
+```
+The var model compared to all other models does not really provide substantially better results. There is more to be said if it should even be assumed that gas and oil prices affect each other. A Var model could potentially be more suitable given that a larger segment of the market was captured in this analysis where there is a reasonable assumption that for example the whole segment of plastic producers might affect the price of oil rather than an individual company. 
