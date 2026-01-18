@@ -561,7 +561,6 @@ print(paste("MAD",result_2$MAD))
 ggplot(result_1$prediction_intervalls, aes(x = time_stamp)) +
   geom_line(aes(y = actual, color = "Actual"), linewidth = 1) +
   geom_line(aes(y = forecast, color = "Forecast"), linewidth = 1) +
-  geom_line(aes(y = forecast, color = "Forecast"), linewidth = 1) +
   geom_ribbon(aes(ymin = lower, ymax = upper, fill = "Prediction Interval"), alpha = 0.2) +
   scale_color_manual(name = "Series", values = c("Actual" = "black", "Forecast" = "blue")) +
   scale_fill_manual(name = "", values = c("Prediction Interval" = "red")) +
